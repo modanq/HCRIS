@@ -1,23 +1,30 @@
 import mysql.connector
 import requests, zipfile, io
 import os, codecs
+import datetime
 import config
 
 
 def main():
-    # Define data directory for MySQL LOAD DATA INFILE statements
+    # Define data directory for data dump and MySQL LOAD DATA INFILE statements
     data_dir = "/var/lib/mysql-files"
+    current_year = datetime.datetime.now().year
 
     # Download raw HCRIS data from CMS website function
-    def download(year, form):
+    def download(form, year=None):
         """Downloads HCRIS files from CMS website based on year and form (i.e. 2552-96 or 2552-10)."""
-        if form == "2552-96":
+        if form == "2552-96" and year is not None:
             r = requests.get(f"http://downloads.cms.gov/Files/hcris/HOSPFY{year}.zip")
-        else:
+        elif form == "2552-10" and year is not None:
             r = requests.get(f"http://downloads.cms.gov/Files/hcris/HOSP10FY{year}.zip")
-        # Extract contents of Zip file into folders by year
+        elif form == "2552-96" and year is None:
+            r = requests.get("http://downloads.cms.gov/files/hcris/HOSP-REPORTS.ZIP")
+        elif form == "2552-10" and year is None:
+            r = requests.get("http://downloads.cms.gov/files/hcris/hosp10-reports.zip")
+
+        # Read content stream of Zip file and extract to data directory
         z = zipfile.ZipFile(io.BytesIO(r.content))
-        z.extractall(f"{data_dir}/{year}/")
+        z.extractall(f"{data_dir}/")
         z.close()
 
     # Remove 'Byte Order Mark' from report file of earlier years 1996-2011 form 2552-96
@@ -49,6 +56,32 @@ def main():
     )
 
     cursor = cnx.cursor()
+
+    # Load variable names and locations in HCRIS files
+    cursor.execute("""
+        LOAD DATA LOCAL INFILE './extracted.csv'
+            INTO TABLE extracted
+                FIELDS TERMINATED BY ','
+    """)
+    cnx.commit()
+
+    # Generic load Providers SQL Statement, with placeholder for data file
+    providers_load_sql = """
+        LOAD DATA INFILE %s
+            IGNORE INTO TABLE provider # IGNORE here skips duplicates
+                FIELDS TERMINATED BY ','
+                LINES TERMINATED BY '\\r\\n'
+                IGNORE 1 LINES
+            (provider_id, @FYB, @FYE, @`STATUS`, @CTRL_TYPE, hospital_name, street_address, po_box, city, @state, @zip_code, county, @Rural)
+                SET state = CASE
+                    WHEN @state = "CONNECTICUT" THEN "CT"
+                    WHEN @state = "MICHIGAN" THEN "MI"
+                    WHEN @state = "NEW YORK" THEN "NY"
+                    WHEN @state = "TEXAS" THEN "TX"
+                    ELSE @state
+                END
+                , zip_code = TRIM(TRAILING '-' FROM @zip_code)
+    """
 
     # Generic load Reports SQL Statement, with placeholders for data file, year, and form
     report_load_sql = """
@@ -102,16 +135,26 @@ def main():
         WHERE variable_type = "Numeric"
     """
 
-    # Loop for years 1996-2011 to download, load, and extract data
+    # Set form for years 1996-2011 and download provider data
     form = '2552-96'
-    for year in range(1996, 2012):
-        print(f"Downloading data for {year}")
-        download(year, form)
+    print(f"Downloading provider data for {form}")
+    download(form)
 
-        report_file = f"{data_dir}/{year}/hosp_{year}_RPT.CSV"
+    # Load provider data for 1996-2011
+    provider_file = f"{data_dir}/HOSPITAL_PROVIDER_ID_INFO.csv"
+    print(f"Loading provider data for {form}")
+    cursor.execute(providers_load_sql, (provider_file,))
+    cnx.commit()
+
+    # Loop for years 1996-2011 to download, load, and extract data
+    for year in range(1996, 2012):
+        print(f"Downloading report data for {year}")
+        download(form, year)
+
+        report_file = f"{data_dir}/hosp_{year}_RPT.CSV"
         remove_bom(report_file)
-        alpha_file = f"{data_dir}/{year}/hosp_{year}_ALPHA.CSV"
-        numeric_file = f"{data_dir}/{year}/hosp_{year}_NMRC.CSV"
+        alpha_file = f"{data_dir}/hosp_{year}_ALPHA.CSV"
+        numeric_file = f"{data_dir}/hosp_{year}_NMRC.CSV"
 
         print(f"Loading reports for {year}")
         cursor.execute(report_load_sql, (report_file, form, year))
@@ -128,15 +171,25 @@ def main():
 
         cnx.commit()
 
-    # Loop for years 2010-2018 to download, load, and extract data
+    # Set form for years 2010-present and download provider data
     form = '2552-10'
-    for year in range(2010, 2019):
-        print(f"Downloading data for {year}")
-        download(year, form)
+    print(f"Downloading provider data for {form}")
+    download(form)
 
-        report_file = f"{data_dir}/{year}/hosp10_{year}_RPT.CSV"
-        alpha_file = f"{data_dir}/{year}/hosp10_{year}_ALPHA.CSV"
-        numeric_file = f"{data_dir}/{year}/hosp10_{year}_NMRC.CSV"
+    # Load provider data for 2010-present
+    provider_file = f"{data_dir}/HOSPITAL_PROVIDER_ID_INFO.csv"
+    print(f"Loading provider data for {form}")
+    cursor.execute(providers_load_sql, (provider_file,))
+    cnx.commit()
+
+    # Loop for years 2010-present to download, load, and extract data
+    for year in range(2010, current_year):
+        print(f"Downloading report data for {year}")
+        download(form, year)
+
+        report_file = f"{data_dir}/hosp10_{year}_RPT.CSV"
+        alpha_file = f"{data_dir}/hosp10_{year}_ALPHA.CSV"
+        numeric_file = f"{data_dir}/hosp10_{year}_NMRC.CSV"
 
         print(f"Loading reports for {year}")
         cursor.execute(report_load_sql, (report_file, form, year))
