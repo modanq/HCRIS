@@ -1,5 +1,6 @@
-# HCRIS
-Python Script to download and load Medicare HCRIS data into MySQL
+# Medicare 340B Drug Discount Program
+Python Scripts to analyze the 340B program.
+Load.py downloads and loads Medicare HCRIS data into MySQL
 
 ##config.py
 ~~~~
