@@ -2,6 +2,7 @@ import mysql.connector
 import requests, zipfile, io
 import os, codecs
 import datetime
+import csv
 import config
 
 
@@ -206,11 +207,13 @@ def main():
 
         cnx.commit()
 
-    # Extract relevant features into CSV file, for data analysis with Python or R
-    # TODO: create CSV loading SQL
-    # cursor.execute("""
-    #     SELECT * FROM aggregate;
-    # """)
+    # Extract relevant features into CSV file for data analysis with Python or R
+    cursor.execute("SELECT * FROM aggregate;")
+
+    with open("./hcris.csv", "w+") as csv_file:
+        csv_writer = csv.writer(csv_file)
+        csv_writer.writerow(col[0] for col in cursor.description)
+        csv_writer.writerows(cursor)
 
     cursor.close()
     cnx.close()

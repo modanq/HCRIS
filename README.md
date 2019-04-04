@@ -1,23 +1,26 @@
-# Medicare 340B
-Python and MySQL Scripts to analyze the 340B drug discount program.
+# Medicare Hospital Cost Reports (HCRIS) Data
+Python and MySQL Scripts to extract and analyze Medicare HCRIS files.
 
-## Load Medicare HCRIS files from CMS Website
-1. Setup MySQL environment
-    * Recommend high cpu and high memory machine with optimization of `mysqld.cnf` configuration; using Google Cloud compute engine n1-highmem-4 (4 vCPUs, 26 GB memory) it takes ~15 min
-2. Run `./HCRIS/hcris_create_database.sql` (creates HCRIS databsase and tables)
-3. Setup Python 3 enviornment
-    * Create `./HCRIS/config.py` file as below
-    * Install `mysql.connector` Python package by either:
-        * `apt-get install apt-get install python3-mysql.connector`
-        * `pip3 install mysql.connector`
-4. Run `./HCRIS/hcris_load_extract.py` (downloads and loads Medicare HCRIS data into MySQL)
+## Load HCRIS files from CMS Website
+1. **Setup MySQL environment**
+    * Recommend high cpu and high memory server with optimization of `mysqld.cnf` configuration
+    * Using Google Cloud compute engine n1-highmem-4 (4 vCPUs, 26 GB memory) it takes ~15 min
+2. **Run `hcris_create_database.sql`**
+    * Creates empty HCRIS databsase and tables
+3. **Setup Python 3 enviornment**
+    * Create `config.py` file as below
+    * Install `mysql.connector` Python package
+4. **e**
+5. **Run `hcris_load_extract.py`**
+    * Downloads and loads Medicare HCRIS data into MySQL
+    * Extracts features present in `features.csv` and creates `hcris.csv` file for analysis with R or Python 
 
-## ./HCRIS/config.py
+## config.py
 ~~~~
 class Database:
     def __init__(self):
-        self.user = "user"
-        self.password = "password"
+        self.user = "[user]"
+        self.password = "[password]"
 
 
 database = Database()
