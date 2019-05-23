@@ -1,7 +1,7 @@
 # Medicare Hospital Cost Reports (HCRIS) Data
 Python and MySQL Scripts to extract and analyze Medicare HCRIS files.
 
-## Load HCRIS files from CMS Website
+## Load HCRIS files from CMS
 1. **Setup MySQL environment**
     * Recommend high cpu and high memory server with optimization of `mysqld.cnf` configuration
     * Using Google Cloud compute engine n1-highmem-4 (4 vCPUs, 26 GB memory) it takes ~15 min
@@ -10,7 +10,9 @@ Python and MySQL Scripts to extract and analyze Medicare HCRIS files.
 3. **Setup Python 3 enviornment**
     * Create `config.py` file as below
     * Install `mysql.connector` Python package
-4. **e**
+4. **Review and update `features.csv` file**
+    * Lists variable that will be extracted from HCRIS files
+    * Contains variable names and variable locations in HCRIS worksheets
 5. **Run `hcris_load_extract.py`**
     * Downloads and loads Medicare HCRIS data into MySQL
     * Extracts features present in `features.csv` and creates `hcris.csv` file for analysis with R or Python 
@@ -25,3 +27,5 @@ class Database:
 
 database = Database()
 ~~~~
+
+## Clean up 

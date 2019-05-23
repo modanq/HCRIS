@@ -2,7 +2,6 @@ import mysql.connector
 import requests, zipfile, io
 import os, codecs
 import datetime
-import csv
 import config
 
 
@@ -11,7 +10,7 @@ def main():
     data_dir = "./data"
     current_year = datetime.datetime.now().year
 
-    # Download raw HCRIS data from CMS website function
+    # Function to Download raw HCRIS data from CMS website
     def download(form, year=None):
         """Downloads HCRIS files from CMS website based on year and form (i.e. 2552-96 or 2552-10)."""
         if form == "2552-96" and year is not None:
@@ -28,7 +27,7 @@ def main():
         z.extractall(f"{data_dir}/")
         z.close()
 
-    # Remove 'Byte Order Mark' from report file of earlier years 1996-2011 form 2552-96
+    # Function to Remove 'Byte Order Mark' from report file of earlier years 1996-2011 form 2552-96
     def remove_bom(file):
         """Removes the 'Byte Order Mark' at the beginning of CSV file, which causes LOAD INFILE to fail"""
         bufsize = 4096
@@ -59,10 +58,24 @@ def main():
     cursor = cnx.cursor()
 
     # Load variable names and locations in HCRIS files
+    print("Loading features to extract")
     cursor.execute("""
-        LOAD DATA LOCAL INFILE './features.csv'
-            INTO TABLE features
+        LOAD DATA LOCAL INFILE './feature.csv'
+            INTO TABLE feature
                 FIELDS TERMINATED BY ','
+                LINES TERMINATED BY '\\r\\n'
+                IGNORE 1 LINES
+    """)
+    cnx.commit()
+
+    # Load variable names and locations in HCRIS files
+    print("Loading feature locations")
+    cursor.execute("""
+        LOAD DATA LOCAL INFILE './feature_location.csv'
+            INTO TABLE feature_location
+                FIELDS TERMINATED BY ','
+                LINES TERMINATED BY '\\r\\n'
+                IGNORE 1 LINES
     """)
     cnx.commit()
 
@@ -109,15 +122,21 @@ def main():
         LOAD DATA LOCAL INFILE %s
             INTO TABLE alpha_temp
                 FIELDS TERMINATED BY ','
+                LINES TERMINATED BY '\\r\\n'
             (report_id, worksheet_code, line_number, column_number, item_text)
                 SET form = %s    
     """
     # Extract and insert only those desired alpha variables in the features table (join of alpha_temp and extracted)
     alpha_insert_sql = """
         INSERT INTO alpha
-        SELECT report_id, form, variable_name, item_text FROM alpha_temp
-            JOIN features USING(form, worksheet_code, line_number, column_number)
-        WHERE variable_type = "Alpha"    
+        SELECT report_id, %s AS form, feature_id, MAX(item_text) AS item_text FROM alpha_temp AS a
+            JOIN feature_location AS l
+                ON a.worksheet_code = l.worksheet_code
+                    AND a.line_number BETWEEN l.from_line AND l.to_line
+                    AND a.column_number BETWEEN l.from_column AND l.to_column
+            JOIN feature USING(feature_id)
+            WHERE `extract` = 1 AND variable_type = "Alpha" AND l.form = %s
+            GROUP BY report_id, feature_id
     """
     # Generic load Numeric SQL Statement into temporary table, with placeholders for data file and form
     numeric_load_sql = """
@@ -131,9 +150,14 @@ def main():
     # Extract and insert only those desired numeric variables in the features table (join of alpha_temp and extracted)
     numeric_insert_sql = """
         INSERT INTO `numeric`
-        SELECT report_id, form, variable_name, item_value FROM numeric_temp
-            JOIN features USING(form, worksheet_code, line_number, column_number)
-        WHERE variable_type = "Numeric"
+        SELECT report_id, %s AS form, feature_id, SUM(item_value) AS item_value FROM numeric_temp AS n
+            JOIN feature_location AS l
+                ON n.worksheet_code = l.worksheet_code
+                    AND n.line_number BETWEEN l.from_line AND l.to_line
+                    AND n.column_number BETWEEN l.from_column AND l.to_column
+            JOIN feature USING(feature_id)
+            WHERE `extract` = 1 AND variable_type = "Numeric" AND l.form = %s
+            GROUP BY report_id, feature_id
     """
 
     # Set form for years 1996-2011 and download provider data
@@ -162,12 +186,12 @@ def main():
 
         print(f"Loading alpha for {year}")
         cursor.execute(alpha_load_sql, (alpha_file, form))
-        cursor.execute(alpha_insert_sql)
+        cursor.execute(alpha_insert_sql, (form, form))
         cursor.execute("TRUNCATE alpha_temp")
 
         print(f"Loading numeric for {year}")
         cursor.execute(numeric_load_sql, (numeric_file, form))
-        cursor.execute(numeric_insert_sql)
+        cursor.execute(numeric_insert_sql, (form, form))
         cursor.execute("TRUNCATE numeric_temp")
 
         cnx.commit()
@@ -197,23 +221,15 @@ def main():
 
         print(f"Loading alpha for {year}")
         cursor.execute(alpha_load_sql, (alpha_file, form))
-        cursor.execute(alpha_insert_sql)
+        cursor.execute(alpha_insert_sql, (form, form))
         cursor.execute("TRUNCATE alpha_temp")
 
         print(f"Loading numeric for {year}")
         cursor.execute(numeric_load_sql, (numeric_file, form))
-        cursor.execute(numeric_insert_sql)
+        cursor.execute(numeric_insert_sql, (form, form))
         cursor.execute("TRUNCATE numeric_temp")
 
         cnx.commit()
-
-    # Extract relevant features into CSV file for data analysis with Python or R
-    cursor.execute("SELECT * FROM aggregate;")
-
-    with open("./hcris.csv", "w+") as csv_file:
-        csv_writer = csv.writer(csv_file)
-        csv_writer.writerow(col[0] for col in cursor.description)
-        csv_writer.writerows(cursor)
 
     cursor.close()
     cnx.close()
